@@ -1,4 +1,4 @@
 window.ONBOARDFLOW_SUPABASE={
-  url:'https://vgkyoyosjewdygxtnqvu.supabase.co',
-  anonKey:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZna3lveW9zamV3ZHlneHRucXZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2NTAxNDAsImV4cCI6MjA5ODIyNjE0MH0.oDxSWg61UFLqMh2MeEW6yxarZAjobhEA6TWm0KS_7CA'
+  url:'https://jslcmzrbonurhsdzuwyx.supabase.co',
+  anonKey:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpzbGNtenJib251cmhzZHp1d3l4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE0NDUyMTEsImV4cCI6MjA5NzAyMTIxMX0.QTjZfJlxaYiY1CxJWbKbCyFwL--kxbDpVRzwxsCDGwc'
 };
