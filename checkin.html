@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0B132B">
+<title>LillyTech OnboardFlow | Registro de asistencia</title>
+<style>
+:root{--navy:#0B132B;--navy2:#1B294D;--ivory:#FAF8F2;--copper:#C9782A;--copper2:#E4A35F;--ink:#242936;--muted:#667085;--surface:#fff;--soft:#F2F1EC;--line:#E7E4DC;--success:#16835D;--warning:#C98A14;--danger:#C4473A;--shadow:0 14px 38px rgba(11,19,43,.10);--display:Georgia,"Times New Roman",serif;--body:Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--ivory);color:var(--ink);font-family:var(--body);line-height:1.45}
+.top{background:var(--navy);color:#fff;padding:14px 16px}.top-inner{max-width:520px;margin:auto;display:flex;align-items:center;gap:11px}
+.mark{width:42px;height:42px;border-radius:13px;background:var(--copper);display:grid;place-items:center;font-family:var(--display);font-size:19px;font-weight:800}
+.brand strong{font-family:var(--display);font-size:19px;display:block}.brand small{color:#d7dce6}
+.shell{max-width:520px;margin:auto;padding:26px 16px 60px}
+.card{background:#fff;border:1px solid var(--line);border-radius:22px;padding:26px;box-shadow:var(--shadow)}
+h1{font-family:var(--display);color:var(--navy);font-size:26px;margin:0 0 6px}
+.lead{color:var(--muted);font-size:15px;margin:0 0 20px}
+label{display:block;font-size:13px;font-weight:700;color:var(--navy);margin-bottom:6px}
+input{width:100%;padding:14px;border:1px solid var(--line);border-radius:12px;font-size:17px;margin-bottom:16px}
+button{width:100%;padding:15px;border:none;border-radius:12px;background:var(--copper);color:#fff;font-weight:800;font-size:16px;cursor:pointer}
+button:disabled{opacity:.6}
+.result{border-radius:16px;padding:18px;margin-top:18px;font-size:15px}
+.result.ok{background:#e9f6ef;color:var(--success);border:1px solid #bfe6d3}
+.result.err{background:#fcecea;color:var(--danger);border:1px solid #f3c6bf}
+.result strong{display:block;font-size:18px;margin-bottom:4px}
+a.btn-link{display:block;text-align:center;margin-top:14px;padding:14px;border-radius:12px;background:var(--navy);color:#fff;text-decoration:none;font-weight:700}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="top"><div class="top-inner"><div class="mark">LT</div><div class="brand"><strong>LillyTech OnboardFlow</strong><small>Registro de asistencia</small></div></div></div>
+<div class="shell">
+  <div class="card">
+    <h1 id="title">Confirmar asistencia</h1>
+    <p class="lead" id="lead">Escriba su ID de empleado para registrar su llegada a esta capacitación.</p>
+    <label for="empId">ID de empleado</label>
+    <input id="empId" placeholder="Ej: CR2-1226" autocomplete="off">
+    <button id="submitBtn">Confirmar mi llegada</button>
+    <div id="result" class="result hidden"></div>
+    <a id="meetingLink" class="btn-link hidden" target="_blank">Unirme a la reunión de Teams</a>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/supabase-fallback.js"></script>
+<script src="assets/supabase-config.js"></script>
+<script src="assets/auth.js"></script>
+<script>
+(function(){'use strict';
+const params=new URLSearchParams(location.search),trainingId=params.get('training');
+const resultEl=document.getElementById('result'),linkEl=document.getElementById('meetingLink'),btn=document.getElementById('submitBtn'),input=document.getElementById('empId');
+if(!trainingId){document.getElementById('lead').textContent='Enlace inválido: falta el identificador de la capacitación. Pídale a su supervisor el enlace correcto.';btn.disabled=true}
+async function submit(){
+  const id=input.value.trim();
+  if(!id){input.focus();return}
+  btn.disabled=true;btn.textContent='Registrando...';
+  try{
+    const{data,error}=await OnboardAuth.client.rpc('of_training_checkin',{p_training_id:trainingId,p_employee_number:id});
+    if(error)throw error;
+    resultEl.classList.remove('hidden','ok','err');
+    if(!data.ok){
+      resultEl.classList.add('err');
+      resultEl.innerHTML=`<strong>No fue posible registrar su llegada</strong>${data.message||''}`;
+    }else{
+      resultEl.classList.add('ok');
+      const label=data.status==='late'?'Registrado como tardío':'Registrado como presente';
+      resultEl.innerHTML=`<strong>${label}</strong>${data.employee_name} · ${data.training_title}`;
+      if(data.meeting_url){linkEl.href=data.meeting_url;linkEl.classList.remove('hidden')}
+      input.disabled=true;btn.classList.add('hidden');
+    }
+  }catch(e){
+    resultEl.classList.remove('hidden');resultEl.classList.add('err');
+    resultEl.innerHTML=`<strong>Ocurrió un error</strong>${e.message}`;
+  }finally{btn.disabled=false;btn.textContent='Confirmar mi llegada'}
+}
+btn.onclick=submit;
+input.addEventListener('keydown',e=>{if(e.key==='Enter')submit()});
+})();
+</script>
+</body>
+</html>

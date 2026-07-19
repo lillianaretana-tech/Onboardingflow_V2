@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0B132B">
+<title>LillyTech OnboardFlow | Capacitación</title>
+<style>
+:root{--navy:#0B132B;--navy2:#1B294D;--ivory:#FAF8F2;--copper:#C9782A;--copper2:#E4A35F;--ink:#242936;--muted:#667085;--surface:#fff;--soft:#F2F1EC;--line:#E7E4DC;--success:#16835D;--warning:#C98A14;--danger:#C4473A;--shadow:0 14px 38px rgba(11,19,43,.10);--display:Georgia,"Times New Roman",serif;--body:Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--ivory);color:var(--ink);font-family:var(--body);line-height:1.45}
+.top{background:var(--navy);color:#fff;padding:14px 16px}.top-inner{max-width:640px;margin:auto;display:flex;align-items:center;gap:11px}
+.mark{width:42px;height:42px;border-radius:13px;background:var(--copper);display:grid;place-items:center;font-family:var(--display);font-size:19px;font-weight:800}
+.brand strong{font-family:var(--display);font-size:19px;display:block}.brand small{color:#d7dce6}
+.shell{max-width:640px;margin:auto;padding:26px 16px 60px}
+.card{background:#fff;border:1px solid var(--line);border-radius:22px;padding:26px;box-shadow:var(--shadow);margin-bottom:18px}
+h1{font-family:var(--display);color:var(--navy);font-size:26px;margin:0 0 6px}
+h2{font-family:var(--display);color:var(--navy);font-size:19px;margin:0 0 10px}
+.lead{color:var(--muted);font-size:15px;margin:0 0 20px}
+label{display:block;font-size:13px;font-weight:700;color:var(--navy);margin-bottom:6px}
+input{width:100%;padding:14px;border:1px solid var(--line);border-radius:12px;font-size:17px;margin-bottom:16px}
+button{width:100%;padding:15px;border:none;border-radius:12px;background:var(--copper);color:#fff;font-weight:800;font-size:16px;cursor:pointer}
+button:disabled{opacity:.6}
+.result{border-radius:16px;padding:14px 18px;margin-top:14px;font-size:14px}
+.result.err{background:#fcecea;color:var(--danger);border:1px solid #f3c6bf}
+.hidden{display:none}
+.video-item{border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:14px}
+.video-item h3{font-size:16px;margin:0 0 10px;color:var(--navy)}
+video{width:100%;border-radius:10px;background:#000;display:block}
+.bar{height:8px;background:var(--soft);border-radius:99px;margin-top:10px;overflow:hidden}
+.bar-fill{height:100%;background:linear-gradient(90deg,var(--copper),var(--copper2));border-radius:99px;transition:width .3s}
+.pct{font-size:13px;color:var(--muted);margin-top:6px;display:flex;justify-content:space-between}
+.badge-done{color:var(--success);font-weight:700}
+.summary{background:#e9f6ef;color:var(--success);border:1px solid #bfe6d3;border-radius:16px;padding:16px;text-align:center;font-weight:700;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="top"><div class="top-inner"><div class="mark">LT</div><div class="brand"><strong>LillyTech OnboardFlow</strong><small>Capacitación por video</small></div></div></div>
+<div class="shell">
+  <div class="card" id="identifyCard">
+    <h1>Ver mi capacitación</h1>
+    <p class="lead">Escriba su ID de empleado para ver los videos asignados.</p>
+    <label for="empId">ID de empleado</label>
+    <input id="empId" placeholder="Ej: CR2-1226" autocomplete="off">
+    <button id="submitBtn">Ver mis videos</button>
+    <div id="result" class="result err hidden"></div>
+  </div>
+  <div id="videosWrap" class="hidden"></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="assets/supabase-fallback.js"></script>
+<script src="assets/supabase-config.js"></script>
+<script src="assets/auth.js"></script>
+<script>
+(function(){'use strict';
+const params=new URLSearchParams(location.search),trainingId=params.get('training');
+const resultEl=document.getElementById('result'),btn=document.getElementById('submitBtn'),input=document.getElementById('empId'),wrap=document.getElementById('videosWrap'),card=document.getElementById('identifyCard');
+if(!trainingId){resultEl.textContent='Enlace inválido: falta el identificador de la capacitación. Pídale a su supervisor el enlace correcto.';resultEl.classList.remove('hidden');btn.disabled=true}
+let empId='';
+
+async function identify(){
+  const id=input.value.trim();
+  if(!id){input.focus();return}
+  btn.disabled=true;btn.textContent='Buscando...';
+  try{
+    const{data,error}=await OnboardAuth.client.rpc('of_training_identify_video',{p_training_id:trainingId,p_employee_number:id});
+    if(error)throw error;
+    if(!data.ok){resultEl.textContent=data.message;resultEl.classList.remove('hidden');return}
+    empId=id;
+    renderVideos(data);
+  }catch(e){resultEl.textContent='Ocurrió un error: '+e.message;resultEl.classList.remove('hidden')}
+  finally{btn.disabled=false;btn.textContent='Ver mis videos'}
+}
+
+function renderVideos(data){
+  card.classList.add('hidden');wrap.classList.remove('hidden');
+  const allDone=data.videos.length>0&&data.videos.every(v=>v.completed);
+  wrap.innerHTML=`<div class="card"><h2>${esc(data.training_title)}</h2><p class="lead">Hola, ${esc(data.employee_name)}. Vea cada video completo para que quede registrado su avance.</p>${allDone?'<div class="summary">Ya completó todos los videos de esta capacitación.</div>':''}</div>`+
+    data.videos.map(v=>`<div class="card video-item" data-video="${v.id}">
+      <h3>${esc(v.title)} ${v.completed?'<span class="badge-done">· Completado</span>':''}</h3>
+      <video controls preload="metadata" data-video-el="${v.id}"><source src="${esc(v.video_url)}"></video>
+      <div class="bar"><div class="bar-fill" data-bar="${v.id}" style="width:${v.watched_pct}%"></div></div>
+      <div class="pct"><span data-pct="${v.id}">${Math.round(v.watched_pct)}% visto</span></div>
+    </div>`).join('');
+
+  data.videos.forEach(v=>{
+    const el=wrap.querySelector(`[data-video-el="${v.id}"]`);
+    if(!el)return;
+    let lastSent=v.watched_pct,maxSeen=v.watched_pct;
+    el.addEventListener('timeupdate',()=>{
+      if(!el.duration)return;
+      const pct=Math.min(100,(el.currentTime/el.duration)*100);
+      if(pct>maxSeen){
+        maxSeen=pct;
+        wrap.querySelector(`[data-bar="${v.id}"]`).style.width=pct+'%';
+        wrap.querySelector(`[data-pct="${v.id}"]`).textContent=Math.round(pct)+'% visto';
+      }
+    });
+    const sendProgress=()=>{
+      if(maxSeen-lastSent<2&&maxSeen<95)return;
+      lastSent=maxSeen;
+      OnboardAuth.client.rpc('of_training_video_progress_update',{p_training_id:trainingId,p_employee_number:empId,p_video_id:v.id,p_watched_pct:maxSeen}).then(({data:d,error})=>{
+        if(!error&&d&&d.ok&&maxSeen>=95){
+          const item=wrap.querySelector(`[data-video="${v.id}"] h3`);
+          if(item&&!item.textContent.includes('Completado'))item.innerHTML+=' <span class="badge-done">· Completado</span>';
+        }
+      });
+    };
+    el.addEventListener('pause',sendProgress);
+    el.addEventListener('ended',()=>{maxSeen=100;sendProgress()});
+    setInterval(sendProgress,15000);
+  });
+}
+
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+btn.onclick=identify;
+input.addEventListener('keydown',e=>{if(e.key==='Enter')identify()});
+})();
+</script>
+</body>
+</html>
