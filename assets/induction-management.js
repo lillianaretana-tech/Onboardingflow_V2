@@ -5,6 +5,8 @@ const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const statusLabel={scheduled:'Programada',registration_open:'Registro abierto',in_progress:'En curso',closed:'Cerrada',cancelled:'Cancelada'};
 const moduleStatusLabel={pending:'Pendiente',in_progress:'En curso',completed:'Completado',approved:'Aprobado',interrupted:'Interrumpido',must_repeat:'Debe repetir',failed:'No aprobado'};
 const moduleStatusColor={pending:'var(--warning)',in_progress:'var(--warning)',completed:'var(--success)',approved:'var(--success)',interrupted:'var(--danger)',must_repeat:'var(--danger)',failed:'var(--danger)'};
+const attendanceLabel={registered:'Registrado',waiting_room:'En sala de espera',present:'Presente',late:'Tardío',absent:'Ausente',incomplete:'Incompleto'};
+const attendanceColor={registered:'var(--warning)',waiting_room:'var(--warning)',present:'var(--success)',late:'var(--success)',absent:'var(--danger)',incomplete:'var(--danger)'};
 
 function form(s={}){
   const d=document.createElement('div');d.className='modal-backdrop';
@@ -40,13 +42,21 @@ async function setModule(sessionId,moduleId,status,btn){
   return true;
 }
 
+async function waitingRoomAction(sessionCandidateId,action,description,btn){
+  if(btn){btn.disabled=true;btn.dataset.originalText=btn.textContent;btn.textContent='...'}
+  const{error}=await client().rpc('of_supervisor_waiting_room_action',{p_session_candidate_id:sessionCandidateId,p_action:action,p_description:description||null});
+  if(btn){btn.disabled=false;btn.textContent=btn.dataset.originalText}
+  if(error){alert('No fue posible actualizar la asistencia: '+error.message);return false}
+  return true;
+}
+
 async function manage(id,existing){
   existing?.remove();
   const session=sessions.find(x=>x.id===id);
   const[mods,progress,people]=await Promise.all([
     client().from('of_modules').select('id,name,module_order,medical_only').eq('active',true).order('module_order'),
     client().from('of_module_progress').select('module_id,status').eq('session_id',id),
-    client().from('of_session_candidates').select('attendance_status,joined_at,candidate:of_candidates(person:of_people(full_name,document_id))').eq('session_id',id)
+    client().from('of_session_candidates').select('id,attendance_status,joined_at,candidate:of_candidates(person:of_people(full_name,document_id))').eq('session_id',id)
   ]);
   if(mods.error||progress.error||people.error)return alert((mods.error||progress.error||people.error).message);
   const progressMap=new Map((progress.data||[]).map(p=>[p.module_id,p.status]));
@@ -74,7 +84,17 @@ async function manage(id,existing){
       </article>`;
     }).join('')||'<p>No hay módulos activos configurados.</p>'}</div>
     <h3>Participantes</h3>
-    <div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Identificación</th><th>Asistencia</th><th>Ingreso</th></tr></thead><tbody>${(people.data||[]).map(x=>`<tr><td>${esc(x.candidate?.person?.full_name)}</td><td>${esc(x.candidate?.person?.document_id)}</td><td>${esc(x.attendance_status)}</td><td>${esc(x.joined_at?new Date(x.joined_at).toLocaleString('es-CR'):'')}</td></tr>`).join('')||'<tr><td colspan="4">Sin participantes.</td></tr>'}</tbody></table></div>
+    <p class="hint" style="color:var(--muted);font-size:13px">Autorice el ingreso o marque ausente aquí mismo, sin cambiar de pantalla.</p>
+    <div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Identificación</th><th>Asistencia</th><th>Ingreso</th><th>Acciones</th></tr></thead><tbody>${(people.data||[]).map(pcand=>{
+      const pending=['registered','waiting_room'].includes(pcand.attendance_status);
+      return `<tr data-participant-row="${pcand.id}">
+        <td>${esc(pcand.candidate?.person?.full_name)}</td>
+        <td>${esc(pcand.candidate?.person?.document_id)}</td>
+        <td><span class="pill" style="background:${attendanceColor[pcand.attendance_status]||'var(--warning)'};color:#fff" data-participant-status="${pcand.id}">${attendanceLabel[pcand.attendance_status]||pcand.attendance_status}</span></td>
+        <td>${esc(pcand.joined_at?new Date(pcand.joined_at).toLocaleString('es-CR'):'')}</td>
+        <td>${pending?`<button class="btn primary" data-admit="${pcand.id}">Autorizar ingreso</button> <button class="btn secondary" data-absent="${pcand.id}">Marcar ausente</button> `:''}<button class="btn secondary" data-incident="${pcand.id}">Incidencia</button></td>
+      </tr>`;
+    }).join('')||'<tr><td colspan="5">Sin participantes.</td></tr>'}</tbody></table></div>
   </div>`;
   document.body.append(d);
 
@@ -110,6 +130,25 @@ async function manage(id,existing){
     if(!confirm('¿Marcar este módulo para repetir?'))return;
     const ok=await setModule(id,mid,'must_repeat',ev.currentTarget);
     if(ok)updateModulePill(d,mid,'must_repeat');
+  }));
+
+  d.querySelectorAll('[data-admit]').forEach(b=>b.addEventListener('click',async ev=>{
+    const scid=ev.currentTarget.dataset.admit;
+    const ok=await waitingRoomAction(scid,'admit',null,ev.currentTarget);
+    if(ok)manage(id,d);
+  }));
+  d.querySelectorAll('[data-absent]').forEach(b=>b.addEventListener('click',async ev=>{
+    const scid=ev.currentTarget.dataset.absent;
+    if(!confirm('¿Marcar a esta persona como ausente?'))return;
+    const ok=await waitingRoomAction(scid,'absent',null,ev.currentTarget);
+    if(ok)manage(id,d);
+  }));
+  d.querySelectorAll('[data-incident]').forEach(b=>b.addEventListener('click',async ev=>{
+    const scid=ev.currentTarget.dataset.incident;
+    const desc=prompt('Describa brevemente la incidencia:');
+    if(desc===null)return;
+    const ok=await waitingRoomAction(scid,'incident',desc,ev.currentTarget);
+    if(ok)alert('Incidencia registrada.');
   }));
 }
 
