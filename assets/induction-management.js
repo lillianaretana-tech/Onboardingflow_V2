@@ -105,14 +105,14 @@ async function manage(id,existing){
     if(ok)manage(id,d);
   });
   d.querySelector('[data-session-close]').addEventListener('click',async ev=>{
-    if(!confirm('¿Finalizar esta inducción?'))return;
+    if(!confirm('¿Finalizar esta inducción? Se cerrará esta ventana.'))return;
     const ok=await setSession(id,'closed',ev.currentTarget);
-    if(ok)manage(id,d);
+    if(ok){alert('Inducción finalizada.');d.remove();await load()}
   });
   d.querySelector('[data-session-cancel]').addEventListener('click',async ev=>{
-    if(!confirm('¿Confirma que desea cancelar esta inducción y cerrar las invitaciones asociadas?'))return;
+    if(!confirm('¿Confirma que desea cancelar esta inducción y cerrar las invitaciones asociadas? Se cerrará esta ventana.'))return;
     const ok=await setSession(id,'cancelled',ev.currentTarget);
-    if(ok)manage(id,d);
+    if(ok){alert('Inducción cancelada.');d.remove();await load()}
   });
 
   d.querySelectorAll('[data-module-start]').forEach(b=>b.addEventListener('click',async ev=>{
