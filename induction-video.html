@@ -33,6 +33,17 @@ button:disabled{opacity:.6}
 .badge-done{color:var(--success);font-weight:700}
 .summary{background:#e9f6ef;color:var(--success);border:1px solid #bfe6d3;border-radius:16px;padding:16px;text-align:center;font-weight:700;margin-top:6px}
 .exam-pending{background:#fff3d2;color:#875e07;border:1px solid #f0dca0;border-radius:12px;padding:14px;font-size:14px;margin-top:10px}
+.exam-modal{position:fixed;inset:0;background:rgba(11,19,43,.55);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
+.exam-box{background:#fff;border-radius:20px;max-width:560px;width:100%;max-height:88vh;overflow-y:auto;padding:24px;box-shadow:var(--shadow)}
+.q-item{margin-bottom:18px}
+.q-item p{font-weight:700;color:var(--navy);margin-bottom:8px}
+.q-opt{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:6px;cursor:pointer}
+.q-opt:hover{background:var(--soft)}
+.q-opt input{width:auto;margin:0}
+.exam-result{border-radius:16px;padding:18px;text-align:center;font-weight:700}
+.exam-result.pass{background:#e9f6ef;color:var(--success)}
+.exam-result.fail{background:#fcecea;color:var(--danger)}
+.cert-btn{background:var(--navy)}
 </style>
 </head>
 <body>
@@ -51,6 +62,7 @@ button:disabled{opacity:.6}
   <div id="modulesWrap" class="hidden"></div>
 </div>
 <script src="https://www.youtube.com/iframe_api"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="assets/supabase-fallback.js"></script>
 <script src="assets/supabase-config.js"></script>
@@ -89,7 +101,8 @@ function renderModules(data){
   wrap.innerHTML=`<div class="card"><h2>Bienvenido/a, ${esc(data.candidate_name)}</h2><p class="lead">Complete cada bloque en orden. Su avance se guarda automáticamente.</p>${allDone?'<div class="summary">Ya completó todos los bloques de su inducción.</div>':''}</div>`+
     data.modules.map(m=>{
       if(m.is_exam){
-        return `<div class="card module-item" data-module="${m.module_id}"><h3>${esc(m.name)} <small>(examen)</small></h3><div class="exam-pending">El examen en pantalla para este bloque estará disponible próximamente. Por ahora, coordine con Recursos Humanos cómo completarlo.</div></div>`;
+        const passed=m.status==='completed'||m.status==='approved';
+        return `<div class="card module-item" data-module="${m.module_id}"><h3>${esc(m.name)} <small>(examen)</small>${passed?` <span class="badge-done">· Aprobado (${m.score??''})</span>`:''}</h3>${passed?'':`<button class="btn secondary" data-take-exam="${m.module_id}" data-exam-name="${esc(m.name)}">${m.status==='must_repeat'?'Repetir examen':'Tomar examen'}</button>`}</div>`;
       }
       if(!m.video_url){
         return `<div class="card module-item" data-module="${m.module_id}"><h3>${esc(m.name)}</h3><div class="exam-pending">Todavía no hay un video asignado a este bloque. Consulte con Recursos Humanos.</div></div>`;
@@ -155,6 +168,63 @@ function renderModules(data){
       setInterval(sendProgress,15000);
     }
   });
+
+  wrap.querySelectorAll('[data-take-exam]').forEach(b=>b.addEventListener('click',()=>{
+    examModal(b.dataset.takeExam,b.dataset.examName,data);
+  }));
+
+  if(allDone&&!wrap.querySelector('[data-cert-btn]')){
+    const certCard=document.createElement('div');certCard.className='card';
+    certCard.innerHTML=`<div class="summary" style="margin-bottom:12px">Su inducción quedó completa.</div><button class="cert-btn" data-cert-btn>Descargar certificado</button>`;
+    wrap.append(certCard);
+    certCard.querySelector('[data-cert-btn]').onclick=()=>downloadCertificate(data.candidate_name);
+  }
+}
+
+async function examModal(moduleId,moduleName,inductionData){
+  const{data,error}=await OnboardAuth.client.rpc('of_candidate_start_exam',{p_code:code,p_document_id:docId,p_module_id:moduleId});
+  if(error||!data.ok){alert((data&&data.message)||'No fue posible cargar el examen.');return}
+  const overlay=document.createElement('div');overlay.className='exam-modal';
+  overlay.innerHTML=`<div class="exam-box"><h2>${esc(moduleName)}</h2><p class="lead">Responda todas las preguntas y toque "Entregar examen". Necesita ${data.passing_score}% o más para aprobar.</p><form id="examForm">${data.questions.map((q,qi)=>`<div class="q-item"><p>${qi+1}. ${esc(q.question)}</p>${q.options.map((opt,oi)=>`<label class="q-opt"><input type="radio" name="q_${q.id}" value="${oi}" required>${esc(opt)}</label>`).join('')}</div>`).join('')}<button type="submit">Entregar examen</button><button type="button" class="btn secondary" style="background:transparent;color:var(--navy);border:1px solid var(--line);margin-top:8px" data-cancel-exam>Cerrar por ahora</button></form><div id="examResult"></div></div>`;
+  document.body.append(overlay);
+  overlay.querySelector('[data-cancel-exam]').onclick=()=>overlay.remove();
+  overlay.querySelector('#examForm').addEventListener('submit',async e=>{
+    e.preventDefault();
+    const answers=data.questions.map(q=>({question_id:q.id,selected_index:Number(new FormData(e.target).get(`q_${q.id}`))}));
+    const submitBtn=e.target.querySelector('button[type="submit"]');submitBtn.disabled=true;submitBtn.textContent='Calificando...';
+    const{data:result,error:err2}=await OnboardAuth.client.rpc('of_candidate_submit_exam',{p_code:code,p_document_id:docId,p_attempt_id:data.attempt_id,p_answers:answers});
+    submitBtn.disabled=false;submitBtn.textContent='Entregar examen';
+    if(err2||!result.ok){alert((result&&result.message)||'No fue posible calificar el examen.');return}
+    e.target.classList.add('hidden');
+    const resEl=overlay.querySelector('#examResult');
+    resEl.innerHTML=`<div class="exam-result ${result.passed?'pass':'fail'}">${result.passed?'¡Aprobado!':'No alcanzó la nota mínima'}<br>${result.correct}/${result.total} correctas · ${result.score}%</div><button style="margin-top:14px" data-close-result>${result.passed?'Continuar':'Cerrar'}</button>`;
+    resEl.querySelector('[data-close-result]').onclick=async()=>{
+      overlay.remove();
+      const{data:fresh}=await OnboardAuth.client.rpc('of_candidate_induction_videos',{p_code:code,p_document_id:docId});
+      if(fresh&&fresh.ok)renderModules(fresh);
+    };
+  });
+}
+
+function downloadCertificate(name){
+  const{jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'landscape',unit:'pt',format:'letter'});
+  const w=doc.internal.pageSize.getWidth(),h=doc.internal.pageSize.getHeight();
+  doc.setFillColor(11,19,43);doc.rect(0,0,w,h,'F');
+  doc.setDrawColor(201,120,42);doc.setLineWidth(3);doc.rect(24,24,w-48,h-48);
+  doc.setTextColor(255,255,255);doc.setFont('times','bold');doc.setFontSize(14);
+  doc.text('LILLYTECH ONBOARDFLOW',w/2,90,{align:'center'});
+  doc.setFontSize(30);doc.text('Certificado de Inducción',w/2,140,{align:'center'});
+  doc.setFont('helvetica','normal');doc.setFontSize(14);doc.setTextColor(215,220,230);
+  doc.text('Se certifica que',w/2,190,{align:'center'});
+  doc.setFont('times','bolditalic');doc.setFontSize(26);doc.setTextColor(255,255,255);
+  doc.text(name,w/2,225,{align:'center'});
+  doc.setFont('helvetica','normal');doc.setFontSize(13);doc.setTextColor(215,220,230);
+  doc.text('completó satisfactoriamente el proceso de inducción de primer ingreso,',w/2,255,{align:'center'});
+  doc.text('incluyendo los módulos y evaluaciones correspondientes.',w/2,272,{align:'center'});
+  doc.setFontSize(11);
+  doc.text('Fecha: '+new Date().toLocaleDateString('es-CR',{year:'numeric',month:'long',day:'numeric'}),w/2,320,{align:'center'});
+  doc.save('Certificado_Induccion_'+name.replace(/\s+/g,'_')+'.pdf');
 }
 
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
