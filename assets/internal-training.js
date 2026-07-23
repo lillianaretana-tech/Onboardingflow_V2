@@ -12,7 +12,7 @@ async function manage(training){const[inviteResult,videoResult]=await Promise.al
   let progressMap=new Map();
   if(training.modality==='video'&&invited.length){const{data:prog}=await client().from('of_training_video_progress').select('employee_id,completed_at').eq('training_id',training.id);(prog||[]).forEach(p=>{if(p.completed_at)progressMap.set(p.employee_id,(progressMap.get(p.employee_id)||0)+1)})}
   const modeLabels={live:'En vivo',video:'Video autoevaluado'},checkinUrl=`${location.origin}${location.pathname.replace(/[^/]+$/,'')}checkin.html?training=${training.id}`,videoUrl=`${location.origin}${location.pathname.replace(/[^/]+$/,'')}training-video.html?training=${training.id}`;
-  const d=document.createElement('div');d.className='modal-backdrop';d.innerHTML=`<div class="modal"><div class="management-head"><div><h2>${esc(training.title)}</h2><p>${esc(training.training_date)} · ${esc(training.start_time)} · ${esc(modeLabels[training.modality]||training.modality)} · ${esc(statusLabels[training.status]||training.status)}</p></div><div style="display:flex;gap:8px"><button class="btn secondary" data-edit-header>Editar</button><button class="btn secondary" data-delete-header>Eliminar</button><button class="btn secondary" data-close>Cerrar</button></div></div><div class="actions" style="justify-content:flex-start"><button class="btn primary" data-save-guests>Guardar invitados</button><button class="btn secondary" data-copy-invite>Copiar mensaje de invitación</button>${training.modality==='live'?'<button class="btn secondary" data-copy-checkin>Copiar enlace de asistencia</button>':'<button class="btn secondary" data-copy-video>Copiar enlace de video</button>'}<button class="btn secondary" data-start>${training.status==='scheduled'?'Iniciar':'Volver a Programada'}</button><button class="btn secondary" data-finalize>Finalizar y cerrar asistencia</button>${training.meeting_url?`<a class="btn secondary" href="${esc(training.meeting_url)}" target="_blank">Abrir Teams</a>`:''}</div><p class="hint" style="color:var(--muted);font-size:13px">${training.modality==='live'?'El enlace de asistencia registra solo con el ID de empleado — no hace falta pasar lista a mano.':'El enlace de video muestra las capacitaciones asignadas y registra el avance solo.'} Agregar invitados o videos funciona en cualquier estado — "Iniciar" es opcional, solo para que quede reflejado en el conteo "En curso".</p>${invited.length?`<div class="actions" style="justify-content:flex-start"><button class="btn secondary" data-copy-list>Copiar lista de convocados</button></div>`:''}${training.modality==='video'?`<h3>Videos asignados</h3><div class="table-wrap"><table><thead><tr><th>#</th><th>Título</th><th>Enlace</th><th></th></tr></thead><tbody data-video-rows>${videos.map((v,i)=>`<tr><td>${i+1}</td><td>${esc(v.title)}</td><td style="max-width:220px;overflow:hidden;text-overflow:ellipsis">${esc(v.video_url)}</td><td><button class="btn secondary" data-delete-video="${v.id}">Quitar</button></td></tr>`).join('')||'<tr><td colspan="4">Todavía no hay videos asignados.</td></tr>'}</tbody></table></div><div class="form-grid"><div class="field"><label class="label">Título del video</label><input class="input" data-new-video-title></div><div class="field"><label class="label">Enlace del video</label><input class="input" data-new-video-url placeholder="https://..."></div></div><button class="btn primary" data-add-video>Guardar video</button>`:''}<div class="filters"><input class="input" data-search placeholder="Buscar por nombre o ID (mínimo 2 letras)"><select class="select" data-project><option value="">Todos los proyectos</option>${projects.map(p=>`<option>${esc(p)}</option>`).join('')}</select></div><h3>Directorio de funcionarios</h3><p class="hint" data-directory-hint style="color:var(--muted);font-size:13px">Escriba un nombre/ID o elija un proyecto para ver funcionarios (${employees.length} en total).</p><div class="table-wrap"><table><thead><tr><th>Invitar</th><th>ID empleado</th><th>Nombre</th><th>Proyecto</th></tr></thead><tbody data-directory></tbody></table></div><h3>Invitados a esta capacitación</h3><div class="table-wrap"><table><thead><tr><th>ID</th><th>Nombre</th><th>Proyecto</th><th>Estado (automático)</th><th>Notas</th><th>Excepción</th></tr></thead><tbody>${invited.map(x=>{const auto=training.modality==='video'?`${progressMap.get(x.employee_id)||0}/${videos.length} videos`:(x.checkin_at?`Ingresó ${new Date(x.checkin_at).toLocaleString('es-CR',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'})}`:'Sin registro aún');return `<tr><td>${esc(x.employee?.employee_number)}</td><td>${esc(x.employee?.full_name)}</td><td>${esc(x.employee?.project_name)}</td><td><span class="pill ${['completed','present','late'].includes(x.status)?'pill-ok':x.status==='absent'||x.status==='incident'?'pill-bad':'pill-warn'}">${esc(statusLabels[x.status]||x.status)}</span><br><small style="color:var(--muted)">${esc(auto)}</small></td><td><input class="input" data-invite-note="${x.id}" value="${esc(x.notes)}"></td><td><button class="btn secondary" style="padding:4px 8px;font-size:12px" data-mark-incident="${x.id}">Incidencia</button> <button class="btn secondary" style="padding:4px 8px;font-size:12px" data-mark-reschedule="${x.id}">Reprogramar</button></td></tr>`}).join('')||'<tr><td colspan="6">Todavía no hay invitados.</td></tr>'}</tbody></table></div></div>`;document.body.append(d);d.querySelector('[data-close]').onclick=()=>d.remove();
+  const d=document.createElement('div');d.className='modal-backdrop';d.innerHTML=`<div class="modal"><div class="management-head"><div><h2>${esc(training.title)}</h2><p>${esc(training.training_date)} · ${esc(training.start_time)} · ${esc(modeLabels[training.modality]||training.modality)} · ${esc(statusLabels[training.status]||training.status)}</p></div><div style="display:flex;gap:8px"><button class="btn secondary" data-edit-header>Editar</button><button class="btn secondary" data-delete-header>Eliminar</button><button class="btn secondary" data-close>Cerrar</button></div></div><div class="actions" style="justify-content:flex-start"><button class="btn primary" data-save-guests>Guardar invitados</button><button class="btn secondary" data-copy-invite>Copiar mensaje de invitación</button>${training.modality==='live'?'<button class="btn secondary" data-copy-checkin>Copiar enlace de asistencia</button>':'<button class="btn secondary" data-copy-video>Copiar enlace de video</button>'}<button class="btn secondary" data-start>${training.status==='scheduled'?'Iniciar':'Volver a Programada'}</button><button class="btn secondary" data-finalize>Finalizar y cerrar asistencia</button>${training.meeting_url?`<a class="btn secondary" href="${esc(training.meeting_url)}" target="_blank">Abrir Teams</a>`:''}</div><p class="hint" style="color:var(--muted);font-size:13px">${training.modality==='live'?'El enlace de asistencia registra solo con el ID de empleado — no hace falta pasar lista a mano.':'El enlace de video muestra las capacitaciones asignadas y registra el avance solo.'} Agregar invitados o videos funciona en cualquier estado — "Iniciar" es opcional, solo para que quede reflejado en el conteo "En curso".</p>${invited.length?`<div class="actions" style="justify-content:flex-start"><button class="btn secondary" data-copy-list>Copiar lista de convocados</button></div>`:''}${training.modality==='video'?`<h3>Videos asignados</h3><div class="table-wrap"><table><thead><tr><th>#</th><th>Título</th><th>Enlace</th><th></th></tr></thead><tbody data-video-rows>${videos.map((v,i)=>`<tr><td>${i+1}</td><td>${esc(v.title)}</td><td style="max-width:220px;overflow:hidden;text-overflow:ellipsis">${esc(v.video_url)}</td><td><button class="btn secondary" data-delete-video="${v.id}">Quitar</button></td></tr>`).join('')||'<tr><td colspan="4">Todavía no hay videos asignados.</td></tr>'}</tbody></table></div><div class="form-grid"><div class="field"><label class="label">Título del video</label><input class="input" data-new-video-title></div><div class="field"><label class="label">Enlace del video (YouTube, no listado)</label><input class="input" data-new-video-url placeholder="https://www.youtube.com/watch?v=..."></div></div><button class="btn primary" data-add-video>Guardar video</button>`:''}<div class="filters"><input class="input" data-search placeholder="Buscar por nombre o ID (mínimo 2 letras)"><select class="select" data-project><option value="">Todos los proyectos</option>${projects.map(p=>`<option>${esc(p)}</option>`).join('')}</select></div><h3>Directorio de funcionarios</h3><p class="hint" data-directory-hint style="color:var(--muted);font-size:13px">Escriba un nombre/ID o elija un proyecto para ver funcionarios (${employees.length} en total).</p><div class="table-wrap"><table><thead><tr><th>Invitar</th><th>ID empleado</th><th>Nombre</th><th>Proyecto</th></tr></thead><tbody data-directory></tbody></table></div><h3>Invitados a esta capacitación</h3><div class="table-wrap"><table><thead><tr><th>ID</th><th>Nombre</th><th>Proyecto</th><th>Estado (automático)</th><th>Notas</th><th>Excepción</th></tr></thead><tbody>${invited.map(x=>{const auto=training.modality==='video'?`${progressMap.get(x.employee_id)||0}/${videos.length} videos`:(x.checkin_at?`Ingresó ${new Date(x.checkin_at).toLocaleString('es-CR',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'})}`:'Sin registro aún');return `<tr><td>${esc(x.employee?.employee_number)}</td><td>${esc(x.employee?.full_name)}</td><td>${esc(x.employee?.project_name)}</td><td><span class="pill ${['completed','present','late'].includes(x.status)?'pill-ok':x.status==='absent'||x.status==='incident'?'pill-bad':'pill-warn'}">${esc(statusLabels[x.status]||x.status)}</span><br><small style="color:var(--muted)">${esc(auto)}</small></td><td><input class="input" data-invite-note="${x.id}" value="${esc(x.notes)}"></td><td><button class="btn secondary" style="padding:4px 8px;font-size:12px" data-mark-incident="${x.id}">Incidencia</button> <button class="btn secondary" style="padding:4px 8px;font-size:12px" data-mark-reschedule="${x.id}">Reprogramar</button></td></tr>`}).join('')||'<tr><td colspan="6">Todavía no hay invitados.</td></tr>'}</tbody></table></div></div>`;document.body.append(d);d.querySelector('[data-close]').onclick=()=>d.remove();
   d.querySelector('[data-edit-header]').onclick=()=>{d.remove();editTraining(training)};
   d.querySelector('[data-delete-header]').onclick=async()=>{if(!confirm(`¿Eliminar "${training.title}" por completo? Esto borra también sus invitados, videos y avances registrados. No se puede deshacer.`))return;const{error}=await client().from('of_internal_trainings').delete().eq('id',training.id);if(error)return alert(error.message);d.remove();await load()};
   d.querySelector('[data-copy-invite]').onclick=async()=>{await copyText(inviteMessage(training));await client().rpc('of_supervisor_mark_invited',{p_training_id:training.id});await copyText(inviteMessage(training));alert('Mensaje copiado y convocados marcados como invitados automáticamente.')};
@@ -44,7 +44,7 @@ async function manage(training){const[inviteResult,videoResult]=await Promise.al
 async function setTraining(id,status,modal){const{error}=await client().from('of_internal_trainings').update({status,updated_at:new Date().toISOString()}).eq('id',id);if(error)return alert(error.message);modal.remove();await load()}
 function render(){let root=document.getElementById('internalTraining');if(!root){root=document.createElement('section');root.id='internalTraining';root.className='card section';document.querySelector('main').append(root)}
   const projects=[...new Set(employees.map(x=>x.project_name).filter(Boolean))].sort();
-  root.innerHTML=`<div class="management-head"><div><h2>Capacitaciones internas</h2><p>Funcionarios actuales, separados del proceso de candidatos.</p></div><button class="btn primary" data-new-training>Nueva capacitación</button></div><div class="grid grid-3"><article class="card metric" data-employee-metric style="cursor:pointer"><strong>${employees.length}</strong><span>Funcionarios en mi directorio</span></article><article class="card metric" data-trainings-metric="scheduled" style="cursor:pointer"><strong>${trainings.filter(x=>x.status==='scheduled').length}</strong><span>Capacitaciones programadas</span></article><article class="card metric" data-trainings-metric="in_progress" style="cursor:pointer"><strong>${trainings.filter(x=>x.status==='in_progress').length}</strong><span>En curso</span></article></div><div class="actions" style="justify-content:flex-start"><button class="btn secondary" data-template>Descargar plantilla Excel</button><label class="btn secondary">Importar funcionarios<input type="file" data-import accept=".xlsx,.xls" hidden></label></div><div class="filters"><input class="input" data-employee-search placeholder="Buscar funcionario por nombre o ID (mínimo 2 letras)"><select class="select" data-employee-project><option value="">Todos los proyectos</option>${projects.map(p=>`<option>${esc(p)}</option>`).join('')}${employees.some(e=>!e.project_name)?'<option value="__sin_proyecto__">Sin proyecto</option>':''}</select></div><p class="hint" data-employee-hint style="color:var(--muted);font-size:13px">Escriba un nombre/ID o elija un proyecto para ver la lista (${employees.length} funcionarios en total).</p><div class="table-wrap"><table><thead><tr><th>ID empleado</th><th>Nombre completo</th><th>Proyecto</th></tr></thead><tbody data-employee-table></tbody></table></div>`;
+  root.innerHTML=`<div class="management-head"><div><h2>Capacitaciones internas</h2><p>Funcionarios actuales, separados del proceso de candidatos.</p></div><div style="display:flex;gap:8px"><button class="btn secondary" data-export-report>Exportar reporte</button><button class="btn primary" data-new-training>Nueva capacitación</button></div></div><div class="grid grid-3"><article class="card metric" data-employee-metric style="cursor:pointer"><strong>${employees.length}</strong><span>Funcionarios en mi directorio</span></article><article class="card metric" data-trainings-metric="scheduled" style="cursor:pointer"><strong>${trainings.filter(x=>x.status==='scheduled').length}</strong><span>Capacitaciones programadas</span></article><article class="card metric" data-trainings-metric="in_progress" style="cursor:pointer"><strong>${trainings.filter(x=>x.status==='in_progress').length}</strong><span>En curso</span></article></div><div class="actions" style="justify-content:flex-start"><button class="btn secondary" data-template>Descargar plantilla Excel</button><label class="btn secondary">Importar funcionarios<input type="file" data-import accept=".xlsx,.xls" hidden></label></div><div class="filters"><input class="input" data-employee-search placeholder="Buscar funcionario por nombre o ID (mínimo 2 letras)"><select class="select" data-employee-project><option value="">Todos los proyectos</option>${projects.map(p=>`<option>${esc(p)}</option>`).join('')}${employees.some(e=>!e.project_name)?'<option value="__sin_proyecto__">Sin proyecto</option>':''}</select></div><p class="hint" data-employee-hint style="color:var(--muted);font-size:13px">Escriba un nombre/ID o elija un proyecto para ver la lista (${employees.length} funcionarios en total).</p><div class="table-wrap"><table><thead><tr><th>ID empleado</th><th>Nombre completo</th><th>Proyecto</th></tr></thead><tbody data-employee-table></tbody></table></div>`;
   const empBody=root.querySelector('[data-employee-table]'),empHint=root.querySelector('[data-employee-hint]');
   const renderEmployees=()=>{const q=(root.querySelector('[data-employee-search]').value||'').toLowerCase().trim(),p=root.querySelector('[data-employee-project]').value;
     if(q.length<2&&!p){empBody.innerHTML='';empHint.hidden=false;empHint.textContent=`Escriba un nombre/ID o elija un proyecto para ver la lista (${employees.length} funcionarios en total).`;return}
@@ -55,6 +55,7 @@ function render(){let root=document.getElementById('internalTraining');if(!root)
     if(matches.length>shown.length){empHint.hidden=false;empHint.textContent=`Mostrando ${shown.length} de ${matches.length} resultados. Afine la búsqueda para ver el resto.`}};
   root.querySelector('[data-employee-search]').oninput=renderEmployees;root.querySelector('[data-employee-project]').onchange=renderEmployees;
   root.querySelector('[data-new-training]').onclick=createTraining;root.querySelector('[data-template]').onclick=template;root.querySelector('[data-import]').onchange=e=>{if(e.target.files[0])importFile(e.target.files[0])};
+  root.querySelector('[data-export-report]').onclick=()=>formatChooser(exportReportXlsx,exportReportPdf);
   root.querySelector('[data-employee-metric]').onclick=()=>projectSummary(root);
   root.querySelectorAll('[data-trainings-metric]').forEach(c=>c.onclick=()=>trainingsList(c.dataset.trainingsMetric))}
 function trainingsList(initialStatus){const labels={scheduled:'Programada',in_progress:'En curso',completed:'Finalizada'};const d=document.createElement('div');d.className='modal-backdrop';d.innerHTML=`<div class="modal"><div class="management-head"><div><h2>Capacitaciones internas</h2><p>${trainings.length} en total. Busque por nombre o fecha.</p></div><div style="display:flex;gap:8px"><button class="btn primary" data-new-training-modal>Nueva capacitación</button><button class="btn secondary" data-close>Cerrar</button></div></div><div class="filters"><input class="input" data-training-search placeholder="Buscar por nombre de la capacitación"><input class="input" data-training-date type="date"><select class="select" data-training-status><option value="">Todas</option><option value="scheduled">Programada</option><option value="in_progress">En curso</option><option value="completed">Finalizada</option></select></div><div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Fecha</th><th>Hora</th><th>Lugar</th><th>Estado</th><th></th></tr></thead><tbody data-training-rows></tbody></table></div></div>`;document.body.append(d);d.querySelector('[data-close]').onclick=()=>d.remove();
@@ -73,6 +74,121 @@ function editTraining(training){const d=document.createElement('div');d.classNam
   const toggle=()=>liveFields.forEach(f=>f.style.display=modalitySel.value==='video'?'none':'');modalitySel.onchange=toggle;toggle();
   d.querySelector('form').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target),{error}=await client().from('of_internal_trainings').update({title:f.get('title'),modality:f.get('modality'),training_date:f.get('date'),start_time:f.get('time'),meeting_url:f.get('url')||null,location:f.get('location')||null,notes:f.get('notes')||null,updated_at:new Date().toISOString()}).eq('id',training.id);if(error)return alert(error.message);d.remove();await load()}}
 function projectSummary(root){const counts=new Map();employees.forEach(e=>{const key=e.project_name||'Sin proyecto';counts.set(key,(counts.get(key)||0)+1)});const rows=[...counts.entries()].sort((a,b)=>b[1]-a[1]);const d=document.createElement('div');d.className='modal-backdrop';d.innerHTML=`<div class="modal"><div class="management-head"><div><h2>Funcionarios por proyecto</h2><p>${employees.length} funcionarios en total. Elija un proyecto para verlo en la lista.</p></div><button class="btn secondary" data-close>Cerrar</button></div><div class="table-wrap"><table><thead><tr><th>Proyecto</th><th>Funcionarios</th><th></th></tr></thead><tbody>${rows.map(([name,count])=>`<tr><td>${esc(name)}</td><td>${count}</td><td><button class="btn secondary" data-open-project="${esc(name)}">Ver lista</button></td></tr>`).join('')||'<tr><td colspan="3">No hay funcionarios cargados.</td></tr>'}</tbody></table></div></div>`;document.body.append(d);d.querySelector('[data-close]').onclick=()=>d.remove();d.querySelectorAll('[data-open-project]').forEach(b=>b.onclick=()=>{const sel=root.querySelector('[data-employee-project]'),name=b.dataset.openProject;if(name==='Sin proyecto'){root.querySelector('[data-employee-search]').value='';sel.value='__sin_proyecto__'}else{sel.value=name}sel.dispatchEvent(new Event('change'));d.remove();root.scrollIntoView({behavior:'smooth'})})}
+function formatChooser(onXlsx,onPdf){
+  const d=document.createElement('div');d.className='modal-backdrop';
+  d.innerHTML=`<div class="modal" style="max-width:360px"><h2>Exportar reporte</h2><p style="color:var(--muted);font-size:14px">¿En qué formato lo prefiere?</p><div class="actions" style="flex-direction:column;gap:10px"><button class="btn primary" data-fmt-xlsx>Excel (.xlsx)</button><button class="btn secondary" data-fmt-pdf>PDF</button><button type="button" class="btn secondary" data-close>Cancelar</button></div></div>`;
+  document.body.append(d);
+  d.querySelector('[data-close]').onclick=()=>d.remove();
+  d.querySelector('[data-fmt-xlsx]').onclick=()=>{d.remove();onXlsx()};
+  d.querySelector('[data-fmt-pdf]').onclick=()=>{d.remove();onPdf()};
+}
+
+function loadPdfLibs(){
+  return new Promise((resolve,reject)=>{
+    if(window.jspdf&&window.jspdf.jsPDF&&typeof new window.jspdf.jsPDF().autoTable==='function')return resolve();
+    const s1=document.createElement('script');s1.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    s1.onload=()=>{
+      const s2=document.createElement('script');s2.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js';
+      s2.onload=()=>resolve();s2.onerror=reject;document.head.append(s2);
+    };
+    s1.onerror=reject;document.head.append(s1);
+  });
+}
+
+async function renderPdfReport(opts){
+  await loadPdfLibs();
+  const{jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'landscape',unit:'pt',format:'letter'});
+  const w=doc.internal.pageSize.getWidth();
+  doc.setFillColor(11,19,43);doc.rect(0,0,w,58,'F');
+  doc.setTextColor(255,255,255);doc.setFont('times','bold');doc.setFontSize(16);
+  doc.text('LillyTech OnboardFlow',30,26);
+  doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(210,215,225);
+  doc.text(opts.title,30,44);
+  doc.setFillColor(201,120,42);doc.rect(0,58,w,20,'F');
+  doc.setTextColor(255,255,255);doc.setFontSize(9);
+  doc.text(opts.subtitle+'  ·  Generado: '+new Date().toLocaleString('es-CR'),30,72);
+  doc.autoTable({
+    startY:92, head:[opts.columns], body:opts.rows,
+    styles:{font:'helvetica',fontSize:8,cellPadding:5,lineColor:[231,228,220],lineWidth:.5},
+    headStyles:{fillColor:[11,19,43],textColor:255,fontStyle:'bold'},
+    alternateRowStyles:{fillColor:[247,244,236]},
+    margin:{left:30,right:30}
+  });
+  doc.save(opts.filename);
+}
+
+const trainingReportStatusLabel={pending:'Pendiente',invited:'Invitado',confirmed:'Confirmado',present:'Presente',late:'Tardío',absent:'Ausente',completed:'Completado',reschedule:'Reprogramar',incident:'Incidencia'};
+
+async function fetchTrainingReport(){
+  const{data,error}=await client().from('of_v_training_report').select('*');
+  if(error){alert('No fue posible generar el reporte: '+error.message);return null}
+  return data||[];
+}
+
+async function exportReportXlsx(){
+  const data=await fetchTrainingReport();
+  if(!data)return;
+  const X=await xlsx();
+  const headers=['Capacitación','Fecha','Modalidad','ID empleado','Nombre','Proyecto','Estado','Check-in','Videos completados','Notas'];
+  const rows=data.map(r=>[
+    r.training_title||'', r.training_date||'', r.modality==='video'?'Video':'En vivo',
+    r.employee_number||'', r.full_name||'', r.project_name||'',
+    trainingReportStatusLabel[r.invitee_status]||r.invitee_status||'',
+    r.checkin_at?new Date(r.checkin_at).toLocaleString('es-CR'):'',
+    r.modality==='video'?`${r.videos_completed||0}/${r.videos_total||0}`:'',
+    r.notes||''
+  ]);
+  const generated=new Date().toLocaleString('es-CR');
+  const totalCols=headers.length,lastCol=X.utils.encode_col(totalCols-1);
+  const aoa=[
+    ['LILLYTECH ONBOARDFLOW',...Array(totalCols-1).fill('')],
+    ['REPORTE DE CAPACITACIONES INTERNAS',...Array(totalCols-1).fill('')],
+    [`Generado: ${generated}`,...Array(totalCols-1).fill('')],
+    [],
+    headers, ...rows
+  ];
+  const ws=X.utils.aoa_to_sheet(aoa);
+  ws['!merges']=[`A1:${lastCol}1`,`A2:${lastCol}2`,`A3:${lastCol}3`].map(X.utils.decode_range);
+  ws['!cols']=[26,14,12,14,26,18,16,20,16,26].map(w=>({wch:w}));
+  ws['!autofilter']={ref:`A5:${lastCol}${Math.max(5,rows.length+5)}`};
+  ws['!freeze']={xSplit:0,ySplit:5,topLeftCell:'A6',state:'frozen'};
+  const border={top:{style:'thin',color:{rgb:'D9D5CB'}},bottom:{style:'thin',color:{rgb:'D9D5CB'}},left:{style:'thin',color:{rgb:'D9D5CB'}},right:{style:'thin',color:{rgb:'D9D5CB'}}};
+  function paint(range,fill,color,bold,size,center){
+    const r=X.utils.decode_range(range);
+    for(let y=r.s.r;y<=r.e.r;y++)for(let x=r.s.c;x<=r.e.c;x++){
+      const a=X.utils.encode_cell({r:y,c:x});
+      if(!ws[a])ws[a]={t:'s',v:''};
+      ws[a].s={font:{name:'Aptos',color:{rgb:color},bold,sz:size},fill:{patternType:'solid',fgColor:{rgb:fill}},alignment:{vertical:'center',horizontal:center?'center':'left',wrapText:true},border};
+    }
+  }
+  paint(`A1:${lastCol}1`,'0B132B','FFFFFF',true,19,true);
+  paint(`A2:${lastCol}2`,'C9782A','FFFFFF',true,13,true);
+  paint(`A3:${lastCol}3`,'FAF8F2','667085',false,10,false);
+  paint(`A5:${lastCol}5`,'0B132B','FFFFFF',true,10,true);
+  rows.forEach((_,i)=>paint(`A${i+6}:${lastCol}${i+6}`,i%2?'FFFFFF':'F7F4EC','242936',false,10,false));
+  const wb=X.utils.book_new();
+  X.utils.book_append_sheet(wb,ws,'Reporte');
+  X.writeFile(wb,`LillyTech_Reporte_Capacitaciones_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+async function exportReportPdf(){
+  const data=await fetchTrainingReport();
+  if(!data)return;
+  const columns=['Capacitación','Fecha','Modalidad','ID','Nombre','Proyecto','Estado','Check-in','Videos'];
+  const rows=data.map(r=>[
+    r.training_title||'', r.training_date||'', r.modality==='video'?'Video':'En vivo',
+    r.employee_number||'', r.full_name||'', r.project_name||'',
+    trainingReportStatusLabel[r.invitee_status]||r.invitee_status||'',
+    r.checkin_at?new Date(r.checkin_at).toLocaleString('es-CR'):'',
+    r.modality==='video'?`${r.videos_completed||0}/${r.videos_total||0}`:''
+  ]);
+  await renderPdfReport({
+    title:'Reporte de capacitaciones internas', subtitle:`${rows.length} registros`,
+    columns, rows, filename:`LillyTech_Reporte_Capacitaciones_${new Date().toISOString().slice(0,10)}.pdf`
+  });
+}
+
 async function load(){profile=profile||await OnboardAuth.getProfile();const[e,t]=await Promise.all([client().from('of_employees').select('*').eq('active',true).order('full_name'),client().from('of_internal_trainings').select('*').order('training_date',{ascending:false})]);if(e.error||t.error)return console.error(e.error||t.error);employees=e.data||[];trainings=t.data||[];render()}
 document.addEventListener('DOMContentLoaded',load);
 })();
