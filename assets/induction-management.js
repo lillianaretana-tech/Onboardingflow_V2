@@ -114,7 +114,7 @@ async function manage(id,existing){
           </div>
         </div>
         <div class="actions" style="justify-content:flex-start;margin-top:8px">
-          ${pending?`<button class="btn primary" data-admit="${pcand.id}">Autorizar ingreso</button> <button class="btn secondary" data-absent="${pcand.id}">Marcar ausente</button> `:''}<button class="btn secondary" data-incident="${pcand.id}">Incidencia</button>
+          ${pending?`<button class="btn primary" data-admit="${pcand.id}">Autorizar ingreso</button> <button class="btn secondary" data-absent="${pcand.id}">Marcar ausente</button> `:''}<button class="btn secondary" data-incident="${pcand.id}">Incidencia</button> <button class="btn secondary" data-view-evidence="${pcand.id}">Ver evidencia de cámara</button>
         </div>
         <div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Módulo</th><th>Estado</th><th>Nota</th><th></th></tr></thead><tbody>${applicable.map(m=>{
           const prog=progressMap.get(`${pcand.id}:${m.id}`);
@@ -172,6 +172,10 @@ async function manage(id,existing){
     if(ok)alert('Incidencia registrada.');
   }));
 
+  d.querySelectorAll('[data-view-evidence]').forEach(b=>b.addEventListener('click',ev=>{
+    evidencePanel(ev.currentTarget.dataset.viewEvidence,modules);
+  }));
+
   d.querySelectorAll('[data-module-edit]').forEach(b=>b.addEventListener('click',ev=>{
     const[scid,mid]=ev.currentTarget.dataset.moduleEdit.split(':');
     const mod=modules.find(m=>m.id===mid);
@@ -184,6 +188,31 @@ async function manage(id,existing){
       progressMap.set(`${scid}:${mid}`,{session_candidate_id:scid,module_id:mid,status:finalStatus,score});
     });
   }));
+}
+
+async function evidencePanel(sessionCandidateId,modules){
+  const d=document.createElement('div');d.className='modal-backdrop';
+  d.innerHTML=`<div class="modal"><div class="management-head"><div><h2>Evidencia de cámara</h2><p>Capturas periódicas mientras veía videos o tomaba exámenes. Es evidencia de presencia, no verificación biométrica de identidad.</p></div><button class="btn secondary" data-close>Cerrar</button></div><div data-evidence-list><p>Cargando...</p></div></div>`;
+  document.body.append(d);
+  d.querySelector('[data-close]').onclick=()=>d.remove();
+  const{data,error}=await client().rpc('of_hr_get_capture_urls',{p_session_candidate_id:sessionCandidateId});
+  const list=d.querySelector('[data-evidence-list]');
+  if(error){list.innerHTML=`<p>${esc(error.message)}</p>`;return}
+  if(!data||!data.length){list.innerHTML='<p style="color:var(--muted)">Todavía no hay capturas registradas para esta persona (o la verificación por cámara no está activa).</p>';return}
+  const moduleName=id=>modules.find(m=>m.id===id)?.name||'—';
+  const withUrls=await Promise.all(data.map(async c=>{
+    const{data:signed}=await client().storage.from('induction-verification').createSignedUrl(c.storage_path,3600);
+    return{...c,url:signed?.signedUrl};
+  }));
+  list.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px">${withUrls.map(c=>`
+    <div style="border:1px solid var(--line);border-radius:12px;overflow:hidden">
+      ${c.url?`<img src="${c.url}" style="width:100%;display:block" loading="lazy">`:'<div style="height:100px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12px">No disponible</div>'}
+      <div style="padding:8px;font-size:11px;color:var(--muted)">
+        <strong style="color:var(--ink)">${esc(moduleName(c.module_id))}</strong><br>
+        ${new Date(c.captured_at).toLocaleString('es-CR')}<br>
+        Rostro: ${c.face_detected===null?'sin datos':c.face_detected?'sí':'no'} · Cambios de pestaña: ${c.tab_blur_count}
+      </div>
+    </div>`).join('')}</div>`;
 }
 
 function moduleVideosPanel(){
