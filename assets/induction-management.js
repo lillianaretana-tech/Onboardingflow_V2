@@ -195,9 +195,12 @@ function moduleVideosPanel(){
     const body=d.querySelector('[data-video-rows]');
     if(error){body.innerHTML=`<tr><td colspan="3">${esc(error.message)}</td></tr>`;return}
     body.innerHTML=(data||[]).map(m=>m.is_exam
-      ?`<tr><td>${esc(m.name)} <small>(examen, no lleva video)</small></td><td colspan="2" style="color:var(--muted)">No aplica</td></tr>`
+      ?`<tr><td>${esc(m.name)} <small>(examen, no lleva video)</small></td><td colspan="2"><button class="btn secondary" data-manage-questions="${m.id}" data-module-name="${esc(m.name)}">Gestionar preguntas</button></td></tr>`
       :`<tr><td>${esc(m.name)}</td><td><input class="input" data-video-url="${m.id}" value="${esc(m.video_url||'')}" placeholder="https://www.youtube.com/watch?v=..."></td><td><button class="btn secondary" data-save-video="${m.id}">Guardar</button></td></tr>`
     ).join('')||'<tr><td colspan="3">No hay módulos activos.</td></tr>';
+    body.querySelectorAll('[data-manage-questions]').forEach(b=>b.addEventListener('click',()=>{
+      d.remove();questionsPanel(b.dataset.manageQuestions,b.dataset.moduleName);
+    }));
     body.querySelectorAll('[data-save-video]').forEach(b=>b.addEventListener('click',async ev=>{
       const mid=ev.currentTarget.dataset.saveVideo;
       const url=body.querySelector(`[data-video-url="${mid}"]`).value.trim();
@@ -207,6 +210,42 @@ function moduleVideosPanel(){
       if(err2)return alert(err2.message);
       alert('Video guardado.');
     }));
+  });
+}
+
+function questionsPanel(moduleId,moduleName){
+  const d=document.createElement('div');d.className='modal-backdrop';
+  d.innerHTML=`<div class="modal"><div class="management-head"><div><h2>Preguntas — ${esc(moduleName)}</h2><p>El candidato recibe estas preguntas en orden aleatorio. Nunca ve cuál es la correcta hasta responder.</p></div><button class="btn secondary" data-close>Cerrar</button></div><div data-questions-list><p>Cargando...</p></div><h3>Agregar pregunta</h3><div class="field"><label class="label">Pregunta</label><input class="input" data-new-question></div><div class="form-grid"><div class="field"><label class="label">Opción A</label><input class="input" data-new-opt="0"></div><div class="field"><label class="label">Opción B</label><input class="input" data-new-opt="1"></div><div class="field"><label class="label">Opción C</label><input class="input" data-new-opt="2"></div><div class="field"><label class="label">Opción D</label><input class="input" data-new-opt="3"></div></div><div class="field"><label class="label">¿Cuál es la correcta?</label><select class="select" data-new-correct><option value="0">Opción A</option><option value="1">Opción B</option><option value="2">Opción C</option><option value="3">Opción D</option></select></div><button class="btn primary" data-add-question>Agregar pregunta</button></div>`;
+  document.body.append(d);
+  d.querySelector('[data-close]').onclick=()=>d.remove();
+
+  async function renderQuestions(){
+    const{data,error}=await client().from('of_exam_questions').select('*').eq('module_id',moduleId).order('question_order');
+    const list=d.querySelector('[data-questions-list]');
+    if(error){list.innerHTML=`<p>${esc(error.message)}</p>`;return}
+    list.innerHTML=(data||[]).length?`<div class="table-wrap"><table><thead><tr><th>#</th><th>Pregunta</th><th>Correcta</th><th></th></tr></thead><tbody>${data.map((q,i)=>`<tr><td>${i+1}</td><td>${esc(q.question_text)}</td><td>${esc((q.options||[])[q.correct_index]||'')}</td><td><button class="btn secondary" data-delete-question="${q.id}">Quitar</button></td></tr>`).join('')}</tbody></table></div>`:'<p style="color:var(--muted)">Todavía no hay preguntas — el examen no se puede tomar hasta agregar al menos una.</p>';
+    list.querySelectorAll('[data-delete-question]').forEach(b=>b.addEventListener('click',async()=>{
+      if(!confirm('¿Quitar esta pregunta?'))return;
+      const{error:err2}=await client().from('of_exam_questions').delete().eq('id',b.dataset.deleteQuestion);
+      if(err2)return alert(err2.message);
+      renderQuestions();
+    }));
+  }
+  renderQuestions();
+
+  d.querySelector('[data-add-question]').addEventListener('click',async()=>{
+    const text=d.querySelector('[data-new-question]').value.trim();
+    const opts=[0,1,2,3].map(i=>d.querySelector(`[data-new-opt="${i}"]`).value.trim());
+    const correct=Number(d.querySelector('[data-new-correct]').value);
+    if(!text||opts.some(o=>!o))return alert('Complete la pregunta y las 4 opciones.');
+    const btn=d.querySelector('[data-add-question]');btn.disabled=true;btn.textContent='Guardando...';
+    const{count}=await client().from('of_exam_questions').select('id',{count:'exact',head:true}).eq('module_id',moduleId);
+    const{error}=await client().from('of_exam_questions').insert({module_id:moduleId,question_text:text,options:opts,correct_index:correct,question_order:(count||0)+1});
+    btn.disabled=false;btn.textContent='Agregar pregunta';
+    if(error)return alert(error.message);
+    d.querySelector('[data-new-question]').value='';
+    [0,1,2,3].forEach(i=>d.querySelector(`[data-new-opt="${i}"]`).value='');
+    renderQuestions();
   });
 }
 
