@@ -90,6 +90,8 @@ async function identify(){
     if(error)throw error;
     if(!data.ok){resultEl.textContent=data.message;resultEl.classList.remove('hidden');return}
     code=c;docId=d;
+    verification.tenantId=data.tenant_id;verification.sessionCandidateId=data.session_candidate_id;
+    if(data.camera_verification)await verification.init();
     if(ytApiReady)renderModules(data);else pendingRender=data;
   }catch(e){resultEl.textContent='Ocurrió un error: '+e.message;resultEl.classList.remove('hidden')}
   finally{btn.disabled=false;btn.textContent='Ver mi inducción'}
@@ -151,8 +153,10 @@ function renderModules(data){
               const dur=e.target.getDuration();
               if(dur>0)markProgress(Math.min(100,(e.target.getCurrentTime()/dur)*100));
             },3000);
+            verification.startCapturing(m.module_id);
           }else{
             if(pollTimer){clearInterval(pollTimer);pollTimer=null}
+            verification.stopCapturing();
             if(e.data===YT.PlayerState.ENDED){markProgress(100);sendProgress()}
             else if(e.data===YT.PlayerState.PAUSED)sendProgress();
           }
@@ -163,8 +167,9 @@ function renderModules(data){
       const el=document.createElement('video');el.controls=true;el.preload='metadata';el.playsInline=true;
       el.innerHTML=`<source src="${esc(m.video_url)}">`;box.append(el);
       el.addEventListener('timeupdate',()=>{if(el.duration)markProgress(Math.min(100,(el.currentTime/el.duration)*100))});
-      el.addEventListener('pause',sendProgress);
-      el.addEventListener('ended',()=>{markProgress(100);sendProgress()});
+      el.addEventListener('play',()=>verification.startCapturing(m.module_id));
+      el.addEventListener('pause',()=>{verification.stopCapturing();sendProgress()});
+      el.addEventListener('ended',()=>{verification.stopCapturing();markProgress(100);sendProgress()});
       setInterval(sendProgress,15000);
     }
   });
@@ -187,9 +192,11 @@ async function examModal(moduleId,moduleName,inductionData){
   const overlay=document.createElement('div');overlay.className='exam-modal';
   overlay.innerHTML=`<div class="exam-box"><h2>${esc(moduleName)}</h2><p class="lead">Responda todas las preguntas y toque "Entregar examen". Necesita ${data.passing_score}% o más para aprobar.</p><form id="examForm">${data.questions.map((q,qi)=>`<div class="q-item"><p>${qi+1}. ${esc(q.question)}</p>${q.options.map((opt,oi)=>`<label class="q-opt"><input type="radio" name="q_${q.id}" value="${oi}" required>${esc(opt)}</label>`).join('')}</div>`).join('')}<button type="submit">Entregar examen</button><button type="button" class="btn secondary" style="background:transparent;color:var(--navy);border:1px solid var(--line);margin-top:8px" data-cancel-exam>Cerrar por ahora</button></form><div id="examResult"></div></div>`;
   document.body.append(overlay);
-  overlay.querySelector('[data-cancel-exam]').onclick=()=>overlay.remove();
+  verification.startCapturing(moduleId);
+  overlay.querySelector('[data-cancel-exam]').onclick=()=>{verification.stopCapturing();overlay.remove()};
   overlay.querySelector('#examForm').addEventListener('submit',async e=>{
     e.preventDefault();
+    verification.stopCapturing();
     const answers=data.questions.map(q=>({question_id:q.id,selected_index:Number(new FormData(e.target).get(`q_${q.id}`))}));
     const submitBtn=e.target.querySelector('button[type="submit"]');submitBtn.disabled=true;submitBtn.textContent='Calificando...';
     const{data:result,error:err2}=await OnboardAuth.client.rpc('of_candidate_submit_exam',{p_code:code,p_document_id:docId,p_attempt_id:data.attempt_id,p_answers:answers});
@@ -226,6 +233,66 @@ function downloadCertificate(name){
   doc.text('Fecha: '+new Date().toLocaleDateString('es-CR',{year:'numeric',month:'long',day:'numeric'}),w/2,320,{align:'center'});
   doc.save('Certificado_Induccion_'+name.replace(/\s+/g,'_')+'.pdf');
 }
+
+// ---------------------------------------------------------------------
+// Verificacion por camara: capturas periodicas + deteccion de cara
+// (si el navegador lo soporta) + conteo de cambios de pestaña. Es
+// evidencia de presencia razonable, no una prueba biometrica.
+// ---------------------------------------------------------------------
+const verification={
+  tenantId:null, sessionCandidateId:null, stream:null, videoEl:null, canvasEl:null,
+  detector:null, tabBlurCount:0, activeModuleId:null, captureTimer:null,
+
+  async init(){
+    document.addEventListener('visibilitychange',()=>{if(document.hidden)this.tabBlurCount++});
+    if('FaceDetector' in window){
+      try{this.detector=new window.FaceDetector({fastMode:true})}catch(_){this.detector=null}
+    }
+    try{
+      this.stream=await navigator.mediaDevices.getUserMedia({video:{width:320,height:240},audio:false});
+      this.videoEl=document.createElement('video');this.videoEl.srcObject=this.stream;this.videoEl.muted=true;
+      this.videoEl.playsInline=true;await this.videoEl.play();
+      this.canvasEl=document.createElement('canvas');this.canvasEl.width=320;this.canvasEl.height=240;
+      const badge=document.createElement('div');
+      badge.style.cssText='position:fixed;bottom:14px;right:14px;background:rgba(11,19,43,.85);color:#fff;padding:8px 12px;border-radius:99px;font-size:12px;z-index:60';
+      badge.textContent='● Verificación por cámara activa';badge.id='camBadge';
+      document.body.append(badge);
+    }catch(e){
+      console.warn('No fue posible activar la cámara para verificación:',e.message);
+    }
+  },
+
+  startCapturing(moduleId){
+    this.activeModuleId=moduleId;
+    if(!this.stream)return;
+    if(this.captureTimer)clearInterval(this.captureTimer);
+    this.capture();
+    this.captureTimer=setInterval(()=>this.capture(),90000);
+  },
+
+  stopCapturing(){
+    if(this.captureTimer){clearInterval(this.captureTimer);this.captureTimer=null}
+  },
+
+  async capture(){
+    if(!this.videoEl||!this.canvasEl||!this.activeModuleId)return;
+    const ctx=this.canvasEl.getContext('2d');
+    ctx.drawImage(this.videoEl,0,0,320,240);
+    let faceDetected=null;
+    if(this.detector){
+      try{const faces=await this.detector.detect(this.canvasEl);faceDetected=faces.length>0}catch(_){faceDetected=null}
+    }
+    this.canvasEl.toBlob(async blob=>{
+      if(!blob)return;
+      const path=`${this.tenantId}/${this.sessionCandidateId}/${this.activeModuleId}/${Date.now()}.jpg`;
+      try{
+        const{error:upErr}=await OnboardAuth.client.storage.from('induction-verification').upload(path,blob,{contentType:'image/jpeg'});
+        if(upErr){console.warn('No fue posible subir la captura:',upErr.message);return}
+        await OnboardAuth.client.rpc('of_candidate_log_capture',{p_code:code,p_document_id:docId,p_module_id:this.activeModuleId,p_storage_path:path,p_face_detected:faceDetected,p_tab_blur_count:this.tabBlurCount});
+      }catch(e){console.warn('Verificación de cámara:',e.message)}
+    },'image/jpeg',0.7);
+  }
+};
 
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 btn.onclick=identify;
