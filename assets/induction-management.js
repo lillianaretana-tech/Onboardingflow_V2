@@ -11,13 +11,17 @@ const candidateStatusLabel={pending_hr_review:'Pendiente revisión RH',returned_
 
 function form(s={}){
   const d=document.createElement('div');d.className='modal-backdrop';
-  d.innerHTML=`<form class="modal"><h2>${s.id?'Editar':'Nueva'} inducción</h2><div class="form-grid"><div class="field"><label class="label">Nombre</label><input class="input" name="title" value="${esc(s.title||'Inducción de primer ingreso')}" required></div><div class="field"><label class="label">Proyecto (opcional)</label><input class="input" name="project_name" value="${esc(s.project_name)}"></div><div class="field"><label class="label">Fecha</label><input class="input" name="session_date" type="date" value="${esc(s.session_date)}" required></div><div class="field"><label class="label">Hora</label><input class="input" name="start_time" type="time" value="${esc((s.start_time||'').slice(0,5))}" required></div><div class="field"><label class="label">Enlace de Teams</label><input class="input" name="meeting_url" type="url" value="${esc(s.meeting_url)}" required></div><div class="field"><label class="label">Cupo</label><input class="input" name="capacity" type="number" min="1" value="${esc(s.capacity||30)}" required></div></div><div class="field"><label class="label">Notas internas</label><textarea class="input" name="notes">${esc(s.notes)}</textarea></div><div class="actions"><button class="btn primary">Guardar</button><button type="button" class="btn secondary" data-close>Cerrar</button></div></form>`;
+  d.innerHTML=`<form class="modal"><h2>${s.id?'Editar':'Nueva'} inducción</h2><div class="form-grid"><div class="field"><label class="label">Nombre</label><input class="input" name="title" value="${esc(s.title||'Inducción de primer ingreso')}" required></div><div class="field"><label class="label">Modalidad</label><select class="select" name="modality"><option value="live" ${s.modality!=='video'?'selected':''}>En vivo (Teams)</option><option value="video" ${s.modality==='video'?'selected':''}>Video autoevaluado</option></select></div><div class="field"><label class="label">Proyecto (opcional)</label><input class="input" name="project_name" value="${esc(s.project_name)}"></div><div class="field"><label class="label">Fecha</label><input class="input" name="session_date" type="date" value="${esc(s.session_date)}" required></div><div class="field"><label class="label">Hora</label><input class="input" name="start_time" type="time" value="${esc((s.start_time||'').slice(0,5))}" required></div><div class="field" data-live-field><label class="label">Enlace de Teams</label><input class="input" name="meeting_url" type="url" value="${esc(s.meeting_url)}"></div><div class="field"><label class="label">Cupo</label><input class="input" name="capacity" type="number" min="1" value="${esc(s.capacity||30)}" required></div></div><div class="field"><label class="label">Notas internas</label><textarea class="input" name="notes">${esc(s.notes)}</textarea></div><div class="actions"><button class="btn primary">Guardar</button><button type="button" class="btn secondary" data-close>Cerrar</button></div></form>`;
   document.body.append(d);
   d.querySelector('[data-close]').onclick=()=>d.remove();
+  const modalitySel=d.querySelector('[name="modality"]'),liveFields=d.querySelectorAll('[data-live-field]');
+  const toggleFields=()=>liveFields.forEach(f=>f.style.display=modalitySel.value==='video'?'none':'');
+  modalitySel.onchange=toggleFields;toggleFields();
   d.querySelector('form').addEventListener('submit',async e=>{
     e.preventDefault();
     const v=Object.fromEntries(new FormData(e.target));
     v.capacity=Number(v.capacity);v.tenant_id=profile.tenant_id;v.created_by=s.created_by||profile.id;v.status=s.status||'scheduled';
+    if(!v.meeting_url)delete v.meeting_url;
     const btn=d.querySelector('button.btn.primary');btn.disabled=true;btn.textContent='Guardando...';
     const q=s.id?client().from('of_sessions').update(v).eq('id',s.id):client().from('of_sessions').insert(v);
     const{error}=await q;
@@ -93,6 +97,7 @@ async function manage(id,existing){
       <button class="btn secondary" data-session-close>Finalizar inducción</button>
       <button class="btn secondary" data-session-cancel>Cancelar inducción</button>
       ${session.meeting_url?`<a class="btn secondary" href="${esc(session.meeting_url)}" target="_blank" rel="noopener">Abrir Teams</a>`:''}
+      ${session.modality==='video'?`<button class="btn secondary" data-copy-video-link>Copiar enlace de inducción por video</button>`:''}
     </div>
     <h3>Participantes</h3>
     <p class="hint" style="color:var(--muted);font-size:13px">Autorice el ingreso y registre el avance de cada módulo/examen por persona. Toque cualquier estado para actualizarlo.</p>
@@ -138,6 +143,16 @@ async function manage(id,existing){
     if(ok){alert('Inducción cancelada.');d.remove();await load()}
   });
 
+  if(session.modality==='video'){
+    const videoLinkBtn=d.querySelector('[data-copy-video-link]');
+    if(videoLinkBtn)videoLinkBtn.addEventListener('click',async()=>{
+      const url=`${location.origin}${location.pathname.replace(/[^/]+$/,'')}induction-video.html`;
+      try{await navigator.clipboard.writeText(url)}catch(_){}
+      alert('Enlace copiado: '+url+'\n\nCada candidato lo usa con su mismo código de acceso y cédula (el que ya se genera al aprobar en Bandeja de candidatos).');
+    });
+  }
+
+
   d.querySelectorAll('[data-admit]').forEach(b=>b.addEventListener('click',async ev=>{
     const scid=ev.currentTarget.dataset.admit;
     const ok=await waitingRoomAction(scid,'admit',null,ev.currentTarget);
@@ -171,6 +186,30 @@ async function manage(id,existing){
   }));
 }
 
+function moduleVideosPanel(){
+  const d=document.createElement('div');d.className='modal-backdrop';
+  d.innerHTML=`<div class="modal"><div class="management-head"><div><h2>Videos de módulos</h2><p>Un video por módulo, se reutiliza en todas las inducciones. Pegue enlaces de YouTube (no listado) o de archivo directo.</p></div><button class="btn secondary" data-close>Cerrar</button></div><div class="table-wrap"><table><thead><tr><th>Módulo</th><th>Enlace del video</th><th></th></tr></thead><tbody data-video-rows><tr><td colspan="3">Cargando...</td></tr></tbody></table></div></div>`;
+  document.body.append(d);
+  d.querySelector('[data-close]').onclick=()=>d.remove();
+  client().from('of_modules').select('id,name,module_order,is_exam,video_url').eq('active',true).order('module_order').then(({data,error})=>{
+    const body=d.querySelector('[data-video-rows]');
+    if(error){body.innerHTML=`<tr><td colspan="3">${esc(error.message)}</td></tr>`;return}
+    body.innerHTML=(data||[]).map(m=>m.is_exam
+      ?`<tr><td>${esc(m.name)} <small>(examen, no lleva video)</small></td><td colspan="2" style="color:var(--muted)">No aplica</td></tr>`
+      :`<tr><td>${esc(m.name)}</td><td><input class="input" data-video-url="${m.id}" value="${esc(m.video_url||'')}" placeholder="https://www.youtube.com/watch?v=..."></td><td><button class="btn secondary" data-save-video="${m.id}">Guardar</button></td></tr>`
+    ).join('')||'<tr><td colspan="3">No hay módulos activos.</td></tr>';
+    body.querySelectorAll('[data-save-video]').forEach(b=>b.addEventListener('click',async ev=>{
+      const mid=ev.currentTarget.dataset.saveVideo;
+      const url=body.querySelector(`[data-video-url="${mid}"]`).value.trim();
+      ev.currentTarget.disabled=true;ev.currentTarget.textContent='Guardando...';
+      const{error:err2}=await client().from('of_modules').update({video_url:url||null}).eq('id',mid);
+      ev.currentTarget.disabled=false;ev.currentTarget.textContent='Guardar';
+      if(err2)return alert(err2.message);
+      alert('Video guardado.');
+    }));
+  });
+}
+
 function repeatsPanel(){
   const d=document.createElement('div');d.className='modal-backdrop';
   d.innerHTML=`<div class="modal"><div class="management-head"><div><h2>Pendientes de repetir</h2><p>De todas las inducciones, no solo la que tenga abierta.</p></div><button class="btn secondary" data-close>Cerrar</button></div><div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Identificación</th><th>Proyecto</th><th>Módulo</th><th>Nota</th><th>Inducción</th></tr></thead><tbody data-repeats-body><tr><td colspan="6">Cargando...</td></tr></tbody></table></div></div>`;
@@ -200,11 +239,12 @@ function render(){
     <article class="card metric"><strong>${sessions.filter(s=>s.status==='closed').length}</strong><span>Cerradas</span></article>
   </div>
   <section class="card section">
-    <div class="management-head"><div><h2>Calendario de inducciones</h2><p>Inicie la sesión y avance cada módulo desde aquí.</p></div><div style="display:flex;gap:8px"><button class="btn secondary" data-repeats>Pendientes de repetir</button><button class="btn primary" data-new>Nueva inducción</button></div></div>
+    <div class="management-head"><div><h2>Calendario de inducciones</h2><p>Inicie la sesión y avance cada módulo desde aquí.</p></div><div style="display:flex;gap:8px"><button class="btn secondary" data-manage-videos>Videos de módulos</button><button class="btn secondary" data-repeats>Pendientes de repetir</button><button class="btn primary" data-new>Nueva inducción</button></div></div>
     <div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Hora</th><th>Nombre</th><th>Asignados</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>${sessions.map(s=>`<tr><td>${esc(s.session_date)}</td><td>${esc(s.start_time)}</td><td>${esc(s.title)}</td><td>${s.participants?.[0]?.count||0}/${s.capacity||30}</td><td>${esc(statusLabel[s.status]||s.status)}</td><td><button class="btn primary" data-manage="${s.id}">Controlar</button> <button class="btn secondary" data-edit="${s.id}">Editar</button></td></tr>`).join('')||'<tr><td colspan="6">No hay inducciones.</td></tr>'}</tbody></table></div>
   </section>`;
   root.querySelector('[data-new]').onclick=()=>form();
   root.querySelector('[data-repeats]').onclick=()=>repeatsPanel();
+  root.querySelector('[data-manage-videos]').onclick=()=>moduleVideosPanel();
   root.querySelectorAll('[data-manage]').forEach(b=>b.onclick=()=>manage(b.dataset.manage));
   root.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>form(sessions.find(s=>s.id===b.dataset.edit)));
 }
