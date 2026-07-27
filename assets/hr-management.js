@@ -17,17 +17,49 @@ function toRow(r){
 
 async function load(){
   profile=profile||await OnboardAuth.getProfile();
-  const{data,error}=await client().from('of_former_employees').select('*,person:of_people(full_name,document_id,email,phone)').order('updated_at',{ascending:false});
-  if(error)return console.error(error);
+  rows=[];
+  render();
+}
+
+let searchTimer=null;
+function scheduleSearch(){
+  clearTimeout(searchTimer);
+  searchTimer=setTimeout(search,300);
+}
+
+async function search(){
+  const q=(document.getElementById('formerSearch')?.value||'').trim();
+  const f=document.getElementById('eligibilityFilter')?.value;
+  const del=document.getElementById('showDeletedFormer')?.checked;
+  const table=document.getElementById('formerTable');
+
+  if(q.length<2){
+    rows=[];
+    table.innerHTML='<tr><td colspan="7">Escriba al menos 2 letras del nombre, o la cédula, para buscar.</td></tr>';
+    return;
+  }
+
+  table.innerHTML='<tr><td colspan="7">Buscando...</td></tr>';
+  let query=client().from('of_former_employees')
+    .select('*,person:of_people!inner(full_name,document_id,email,phone)')
+    .or(`full_name.ilike.%${q}%,document_id.ilike.%${q}%`,{foreignTable:'person'})
+    .order('updated_at',{ascending:false})
+    .limit(50);
+  if(!del)query=query.is('deleted_at',null);
+  if(f)query=query.eq('eligibility_status',ELIG_VALUE[f]);
+
+  const{data,error}=await query;
+  if(error){table.innerHTML=`<tr><td colspan="7">${x(error.message)}</td></tr>`;return}
   rows=(data||[]).map(toRow);
   render();
 }
 
 function render(){
-  let q=(document.getElementById('formerSearch')?.value||'').toLowerCase(),f=document.getElementById('eligibilityFilter')?.value,del=document.getElementById('showDeletedFormer')?.checked;
-  document.getElementById('formerTable').innerHTML=rows.filter(r=>(del||!r.deleted_at)&&(!f||r.eligibility===f)&&Object.values(r).some(v=>String(v).toLowerCase().includes(q)))
+  const q=(document.getElementById('formerSearch')?.value||'').trim();
+  if(q.length<2)return;
+  document.getElementById('formerTable').innerHTML=rows
     .map(r=>`<tr class="${r.deleted_at?'row-deleted':''}"><td>${x(r.name)}<br><small>${x(r.email)} ${x(r.phone)}</small></td><td>${x(r.document)}</td><td>${x(r.company)}</td><td>${x(r.project)}<br>${x(r.position)}</td><td>${x(r.exit_date)}<br>${x(r.exit_reason)}</td><td>${x(r.eligibility)}</td><td><button class="btn secondary" data-edit="${r.id}">Editar</button> <button class="btn secondary" data-delete="${r.id}">${r.deleted_at?'Restaurar':'Eliminar'}</button></td></tr>`)
-    .join('')||'<tr><td colspan="7">No hay registros.</td></tr>';
+    .join('')||`<tr><td colspan="7">Sin resultados para "${x(q)}".</td></tr>`;
 }
 
 function form(r={}){
@@ -57,7 +89,7 @@ function form(r={}){
     const q=r.id?client().from('of_former_employees').update(payload).eq('id',r.id):client().from('of_former_employees').insert(payload);
     const{error}=await q;
     if(error)return alert(error.message);
-    d.remove();await load();
+    d.remove();await search();
   };
 }
 
@@ -150,8 +182,8 @@ async function exportFormerPdf(){
 function load_file(file){
   let rd=new FileReader;
   rd.onload=e=>{
-    let w=XLSX.read(e.target.result,{type:'array',cellDates:true}),a=XLSX.utils.sheet_to_json(w.Sheets[w.SheetNames[0]],{header:1,defval:''});
-    a=a.map(row=>row.map(v=>v instanceof Date?v.toISOString().slice(0,10):v));
+    let w=XLSX.read(e.target.result,{type:'array',cellDates:true}),a=XLSX.utils.sheet_to_json(w.Sheets[w.SheetNames[0]],{header:1,defval:'',raw:false});
+    a=a.map(row=>row.map(v=>v instanceof Date?v.toISOString().slice(0,10):String(v??'').trim()));
     // Busca la fila de encabezados entre las primeras filas, por si la
     // plantilla trae filas de título/branding antes de los encabezados.
     let headerIndex=a.findIndex(row=>H.every(h=>row.includes(h)));
@@ -164,8 +196,10 @@ function load_file(file){
       return;
     }
     window.ofPreview=a.slice(headerIndex+1).filter(row=>row.some(Boolean));
+    const docCol=H.indexOf('Cedula o identificacion');
+    const shortOnes=window.ofPreview.filter(row=>(row[docCol]||'').replace(/\D/g,'').length<8).length;
     document.getElementById('importPreview').classList.remove('hidden');
-    document.getElementById('importValidation').textContent=window.ofPreview.length+' filas validadas';
+    document.getElementById('importValidation').textContent=window.ofPreview.length+' filas validadas'+(shortOnes?` · ⚠️ ${shortOnes} cédula(s) con menos de 8 dígitos — revise si Excel les quitó ceros a la izquierda antes de confirmar`:'');
     document.getElementById('previewTable').innerHTML='<tbody><tr>'+H.map(h=>`<th>${x(h)}</th>`).join('')+'</tr>'+window.ofPreview.slice(0,10).map(row=>'<tr>'+row.map(v=>`<td>${x(v)}</td>`).join('')+'</tr>').join('')+'</tbody>';
     document.querySelector('[data-action="confirm-import"]').disabled=false;
   };
@@ -177,14 +211,27 @@ async function confirm_import(){
   const mode=document.getElementById('duplicateMode').value;
   const payload=(window.ofPreview||[]).map(v=>Object.fromEntries(K.map((k,i)=>[k,v[i]||''])));
   const btn=document.querySelector('[data-action="confirm-import"]');
-  btn.disabled=true;btn.textContent='Importando...';
-  const{data,error}=await client().rpc('of_hr_import_former_employees',{p_rows:payload,p_mode:mode});
-  btn.disabled=false;btn.textContent='Confirmar importación';
-  if(error)return alert(error.message);
+  btn.disabled=true;
+  const BATCH=1000;
+  const totals={added:0,updated:0,skipped:0,errors:0};
+  const batches=[];
+  for(let i=0;i<payload.length;i+=BATCH)batches.push(payload.slice(i,i+BATCH));
   let b=document.getElementById('importSummary');
   b.classList.remove('hidden');
-  b.textContent=`Agregados: ${data.added} · Actualizados: ${data.updated} · Omitidos: ${data.skipped} · Errores: ${data.errors}`;
-  await load();
+  try{
+    for(let i=0;i<batches.length;i++){
+      btn.textContent=`Importando lote ${i+1} de ${batches.length}...`;
+      b.textContent=`Procesando ${Math.min((i+1)*BATCH,payload.length)} de ${payload.length}...`;
+      const{data,error}=await client().rpc('of_hr_import_former_employees',{p_rows:batches[i],p_mode:mode});
+      if(error)throw error;
+      totals.added+=data.added;totals.updated+=data.updated;totals.skipped+=data.skipped;totals.errors+=data.errors;
+    }
+    b.textContent=`Agregados: ${totals.added} · Actualizados: ${totals.updated} · Omitidos: ${totals.skipped} · Errores: ${totals.errors}`;
+  }catch(error){
+    b.textContent=`Se detuvo por un error: ${error.message}. Lo procesado hasta ahí ya quedó guardado — Agregados: ${totals.added} · Actualizados: ${totals.updated}.`;
+  }
+  btn.disabled=false;btn.textContent='Confirmar importación';
+  await search();
 }
 
 document.addEventListener('click',async e=>{
@@ -209,13 +256,13 @@ document.addEventListener('click',async e=>{
       const{error}=await client().from('of_former_employees').update({deleted_at:new Date().toISOString(),deleted_by:profile.id,deletion_reason:reason,updated_by:profile.id}).eq('id',r.id);
       if(error)return alert(error.message);
     }
-    await load();
+    await search();
   }
 });
-document.addEventListener('input',e=>{if(['formerSearch','eligibilityFilter','showDeletedFormer'].includes(e.target.id))render()});
+document.addEventListener('input',e=>{if(e.target.id==='formerSearch')scheduleSearch()});
 document.addEventListener('change',e=>{
   if(e.target.id==='formerImport'&&e.target.files[0])load_file(e.target.files[0]);
-  if(['eligibilityFilter','showDeletedFormer'].includes(e.target.id))render();
+  if(['eligibilityFilter','showDeletedFormer'].includes(e.target.id))search();
 });
 document.addEventListener('DOMContentLoaded',load);
 })();
