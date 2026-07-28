@@ -16,15 +16,15 @@ window.checkEligibility=async function(){
       const{data,error}=await client().rpc('of_check_eligibility',{p_document_id:id});
       if(error)throw error;
       const state=data.status;
-      if(state==='not_eligible'){box.classList.add('bad');title.textContent='No elegible para contratación';reg.style.display='none'}
-      else if(state==='review_required'){box.classList.add('review');title.textContent='Revisión de Recursos Humanos';reg.style.display='none'}
-      else{box.classList.add('ok');title.textContent='Apto para continuar';reg.style.display='block'}
+      if(state==='not_eligible'){box.classList.add('bad');title.textContent='No elegible para contratación'}
+      else if(state==='review_required'){box.classList.add('review');title.textContent='Revisión de Recursos Humanos'}
+      else{box.classList.add('ok');title.textContent='Apto para continuar'}
       text.textContent=data.message;
     }else{
       // Verificacion rapida solo por nombre (CV sin cedula) — no registra
-      // nada, es solo para decidir si vale la pena entrevistar.
+      // nada, es solo para decidir si vale la pena entrevistar. No toca
+      // el formulario de registro, que es independiente de esto.
       if(name.length<3){alert('Escriba al menos 3 letras del nombre.');box.classList.remove('show');return}
-      reg.style.display='none';
       const{data,error}=await client().rpc('of_check_eligibility_by_name',{p_name:name});
       if(error)throw error;
       const matches=data.matches||[];
